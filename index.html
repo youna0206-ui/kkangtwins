@@ -567,9 +567,10 @@ function rST(){
         '</div>';
       });
       h+='<div style="display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap;">'+
-        '<span style="font-size:12px;color:var(--mu);">주차 번호:</span>'+
-        '<input type="number" min="1" max="99" placeholder="예: 3" id="wkin-'+s.id+'" style="width:60px;padding:.3rem .5rem;border-radius:8px;border:1.5px solid var(--br);font-size:13px;">'+
+        '<span style="font-size:12px;color:var(--mu);">N주차까지 일괄생성:</span>'+
+        '<input type="number" min="1" max="99" placeholder="예: 8" id="wkin-'+s.id+'" style="width:60px;padding:.3rem .5rem;border-radius:8px;border:1.5px solid var(--br);font-size:13px;">'+
         '<button class="add-wk-btn" data-addwk="'+s.id+'">+ 주차 생성</button>'+
+        '<button class="add-wk-btn" style="background:var(--bll);color:var(--bld);border-color:var(--bl);" data-addnext="'+s.id+'">+ 다음 주차</button>'+
       '</div></div></div>';
     });
     h+='</div>';
@@ -723,18 +724,23 @@ function bAll(){
     });
   });
 
-  // 주차 생성 (번호 직접 입력)
+  // 주차 생성 (총 N주차까지 일괄 생성)
   document.querySelectorAll('[data-addwk]').forEach(function(el){
     el.addEventListener('click',function(){
       var sid=el.dataset.addwk;
       var s=S.studies.filter(function(x){return x.id===sid;})[0];if(!s)return;
       var inp=document.getElementById('wkin-'+sid);
-      var num=inp?+inp.value:0;
-      if(!num||num<1||num>99){alert('1~99 사이 주차 번호를 입력해주세요');return;}
-      if(s.weeks.filter(function(x){return x.num===num;}).length){alert(num+'주차가 이미 있어요!');return;}
-      s.weeks.push({num:num,locked:false});
+      var total=inp?+inp.value:0;
+      if(!total||total<1||total>52){alert('1~52 사이 숫자를 입력해주세요\n예: 8 입력 → 1~8주차 생성');return;}
+      var added=0;
+      for(var i=1;i<=total;i++){
+        if(!s.weeks.filter(function(x){return x.num===i;}).length){
+          s.weeks.push({num:i,locked:false});added++;
+        }
+      }
       s.weeks.sort(function(a,b){return a.num-b.num;});
       if(inp)inp.value='';
+      if(added===0){alert('이미 1~'+total+'주차가 모두 있어요!');}
       persist();
     });
   });
@@ -769,6 +775,17 @@ function bAll(){
     el.addEventListener('click',function(){
       var s=S.studies.filter(function(x){return x.id===el.dataset.stg;})[0];
       if(s){s.active=!s.active;persist();}
+    });
+  });
+
+  // 다음 주차 자동 추가
+  document.querySelectorAll('[data-addnext]').forEach(function(el){
+    el.addEventListener('click',function(){
+      var s=S.studies.filter(function(x){return x.id===el.dataset.addnext;})[0];if(!s)return;
+      var aw=s.weeks||[];
+      var nextNum=aw.length>0?Math.max.apply(null,aw.map(function(x){return x.num;}))+1:1;
+      s.weeks.push({num:nextNum,locked:false});
+      persist();
     });
   });
 
@@ -832,7 +849,20 @@ async function persist(){
 }
 function applyData(d){
   S.studies=d&&d.studies&&d.studies.length?d.studies:JSON.parse(JSON.stringify(DEFAULT_STUDIES));
-  S.members=d&&d.members&&d.members.length?d.members:JSON.parse(JSON.stringify(DEFAULT_MEMBERS));
+  // Firebase 멤버 + DEFAULT_MEMBERS 병합 (새 멤버 자동 추가)
+  var dbMembers=d&&d.members&&d.members.length?d.members:[];
+  if(dbMembers.length){
+    var existIds=dbMembers.map(function(m){return m.id;});
+    var existNames=dbMembers.map(function(m){return m.name;});
+    DEFAULT_MEMBERS.forEach(function(dm){
+      if(existIds.indexOf(dm.id)<0&&existNames.indexOf(dm.name)<0){
+        dbMembers.push(JSON.parse(JSON.stringify(dm)));
+      }
+    });
+    S.members=dbMembers;
+  } else {
+    S.members=JSON.parse(JSON.stringify(DEFAULT_MEMBERS));
+  }
   S.checkins=d&&d.checkins?d.checkins:{};
   // 마이그레이션: weeks 없으면 생성
   S.studies.forEach(function(s){
